@@ -1,2 +1,4 @@
 streamlit
 pytest
+openai>=2.0,<3.0
+pydantic>=2.0,<3.0

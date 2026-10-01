@@ -1,12 +1,27 @@
 import streamlit as st
+from html import escape
 
-from src.mock_report import generate_mock_report
 from src.models import ResearchReport
+from src.web_research import ResearchError, generate_research_report
+
+
+def evidence_html(report: ResearchReport) -> str:
+    """Render API citation spans as clickable links without trusting model HTML."""
+    text = report.search_evidence
+    parts: list[str] = []
+    position = 0
+    for start, end, title, url in sorted(report.citation_spans):
+        if not (position <= start < end <= len(text)):
+            continue
+        parts.append(escape(text[position:start]))
+        parts.append(f'<a href="{escape(url, quote=True)}">{escape(title)}</a>')
+        position = end
+    parts.append(escape(text[position:]))
+    return "".join(parts).replace("\n", "<br>")
 
 
 def show_report(report: ResearchReport) -> None:
     st.subheader("Research Report")
-    st.info("이 리포트의 내용과 Sources는 고정된 Mock 예시이며 실제 조사 결과가 아닙니다.")
 
     st.header("Research Topic")
     st.write(report.topic)
@@ -15,33 +30,50 @@ def show_report(report: ResearchReport) -> None:
         ("Requirements Summary", report.requirements_summary),
         ("Candidate Approaches", report.approaches),
         ("Comparison", report.comparison),
+        ("Recommended Direction", [report.recommended_direction]),
         ("Key Risks", report.risks),
         ("Implementation Checklist", report.checklist),
-        ("Sources", report.sources),
     )
     for title, items in sections:
         st.header(title)
         for item in items:
             st.write(f"- {item}")
 
+    st.header("Sources")
+    st.caption("아래 URL은 OpenAI Web Search가 반환한 citation/source 메타데이터에서 가져왔습니다.")
+    for source in report.source_details:
+        st.link_button(source.title, source.url)
+        st.caption(f"{source.url} · {'인용됨' if source.cited else '검색 참조'}")
+
+    with st.expander("검색 근거와 인라인 인용"):
+        st.markdown(evidence_html(report), unsafe_allow_html=True)
+
 
 def main() -> None:
     st.set_page_config(page_title="Engineering Research Agent")
     st.title("Engineering Research Agent")
     st.write(
-        "큰 기능을 구현하기 전에 조사 주제와 검토 항목을 정리하는 "
-        "Research Report의 입력 → 출력 흐름을 확인하는 데모입니다."
+        "개발 기술 조사 주제를 입력하면 실제 Web Search와 LLM 분석으로 "
+        "출처가 포함된 Research Report를 생성합니다."
     )
-    st.warning("v0.1 Mock Demo — AI 및 Web Search는 아직 연결되지 않았습니다.")
-
     topic = st.text_area("기술 조사 주제", placeholder="예: 파일 업로드 기능 설계")
     st.caption("예시 주제: 파일 업로드 기능 설계, 알림 시스템 구현 방식 비교")
 
-    if st.button("Generate Research Report"):
+    submitted = st.button("Generate Research Report")
+    if not submitted:
+        st.info("조사 대기 · 주제를 입력하고 보고서 생성을 누르세요.")
+    else:
         if not topic.strip():
             st.warning("기술 조사 주제를 입력해 주세요.")
         else:
-            show_report(generate_mock_report(topic))
+            with st.spinner("조사 중 · 웹 검색과 보고서 분석을 진행합니다..."):
+                try:
+                    report = generate_research_report(topic)
+                except ResearchError as exc:
+                    st.error(f"조사 오류 · {exc}")
+                else:
+                    st.success("조사 완료 · 실제 출처를 확인해 주세요.")
+                    show_report(report)
 
 
 if __name__ == "__main__":
