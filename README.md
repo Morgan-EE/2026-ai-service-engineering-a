@@ -14,30 +14,22 @@ Engineering Research Agent는 소프트웨어 개발 과정에서 규모가 큰 
 ## 주요 기능
 
 - 개발 요구사항 및 기술 조사 주제 분석
-- 조사 계획 및 검색 Query 생성
-- Web Search Tool을 활용한 기술 자료 수집
+- OpenAI Web Search를 활용한 기술 자료 수집
 - 공식 문서 및 구현 사례 정리
 - 구현 방법별 장단점 비교
 - 위험 요소 및 구현 전 확인사항 도출
-- 참고 출처가 포함된 Markdown 기술 리포트 생성
+- API citation/source 메타데이터에 근거한 출처 표시
 
 ## 기본 실행 흐름
 
-사용자 입력  
-→ 조사 계획 수립  
-→ 웹 검색  
-→ 검색 결과 선별 및 분석  
-→ 필요 시 추가 검색  
-→ 기술 조사 리포트 생성
+사용자 입력 → OpenAI Responses API Web Search (필수, 최대 2회 도구 호출) → 검색 내용 및 API 출처 메타데이터 수집 → Pydantic Structured Output으로 보고서 작성 → 출처 URL과 인라인 검색 근거 표시
 
 ## 개발 계획
 
-초기 버전에서는 단일 Agent와 Web Search Tool을 기반으로 핵심 기능을 구현합니다.
+v0.2에서는 두 번 이하의 모델 호출로 단일 조사 요청을 처리합니다. 무제한 Agent Loop는 사용하지 않습니다.
 
 이후 다음 기능을 단계적으로 적용할 예정입니다.
 
-- Structured Output을 활용한 결과 구조화
-- 최대 검색 횟수 및 Agent Step 제한
 - 출처 검증 및 공식 문서 우선 검색
 - 검색 결과 품질 검증
 - 필요 시 Reviewer 또는 Multi-Agent 구조 적용
@@ -46,9 +38,9 @@ Engineering Research Agent는 소프트웨어 개발 과정에서 규모가 큰 
 
 실제 개인 소프트웨어 프로젝트에서 규모가 큰 신규 기능을 개발하기 전 기술 검토 단계에 활용할 예정입니다. 공개 저장소에는 특정 프로젝트의 내부 정보와 무관한 범용 Agent 구조와 예제를 작성합니다.
 
-## Current Status: v0.1 Mock Demo
+## Current Status: v0.2 Web Research
 
-현재 버전은 실제 조사 Agent가 아닌 Input → Output UX 확인용 Mock Demo입니다. 생성되는 리포트의 모든 내용과 Sources는 고정된 예시 데이터입니다. AI 및 Web Search는 연결되어 있지 않습니다.
+현재 버전은 실제 OpenAI Web Search와 LLM 분석을 연결합니다. v0.1의 고정 Mock Report는 회귀 테스트와 예제로 남아 있지만 실행 UI에서는 사용하지 않습니다. 실제 출처 URL은 모델이 작성한 보고서 문자열에서 추출하지 않고 첫 번째 Web Search 응답의 `url_citation` 및 `web_search_call.action.sources`에서만 가져옵니다. 인용된 출처와 검색에서 참조된 출처를 구분해 표시하며, 검색 근거의 인라인 인용도 클릭할 수 있습니다. 출처가 없으면 보고서를 생성하지 않습니다.
 
 ## 설치 및 실행
 
@@ -68,20 +60,41 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-브라우저에서 Streamlit이 안내하는 로컬 주소를 열고 주제를 입력한 뒤 **Generate Research Report**를 누릅니다. 테스트는 저장소 루트에서 `python -m pytest`로 실행할 수 있습니다.
+실행 전에 `OPENAI_API_KEY` 환경변수를 설정해야 합니다. 키를 코드나 `.env` 파일로 커밋하지 마세요. 선택적으로 `OPENAI_MODEL`을 지정할 수 있으며 기본값은 `gpt-4.1-mini`입니다. 예시는 `.env.example`에 있습니다. 앱은 `.env`를 자동으로 읽지 않습니다.
 
-## Demo에서 가능한 것
+PowerShell 예시:
 
-- 기술 조사 주제 입력 및 빈 입력 안내
-- 입력 주제가 포함된 결정적 Mock Research Report 생성
-- 요구사항, 후보 접근법, 비교, 위험 요소, 체크리스트, Mock Sources 확인
+```powershell
+$env:OPENAI_API_KEY = "YOUR_KEY"
+streamlit run app.py
+```
+
+브라우저에서 Streamlit이 안내하는 로컬 주소를 열고 주제를 입력한 뒤 **Generate Research Report**를 누릅니다. 빈 주제 또는 키 누락 시 API 요청 없이 안내가 표시됩니다. 모델 호출은 최대 2회, 첫 호출의 Web Search 도구 호출은 최대 2회이며 SDK 재시도는 비활성화했습니다. 각 API 호출 timeout은 45초입니다. 테스트는 저장소 루트에서 `python -m pytest`로 실행할 수 있습니다.
+
+## Report 구조
+
+- Research Topic (입력 주제 유지)
+- Requirements Summary
+- Candidate Approaches
+- Comparison
+- Recommended Direction
+- Key Risks
+- Implementation Checklist
+- Sources (실제 API citation/source URL)
+- 검색 근거와 클릭 가능한 인라인 인용
+
+## v0.1과 달라진 점
+
+v0.1은 고정된 Mock 데이터를 표시했습니다. v0.2는 실제 검색과 LLM 분석 결과를 보고서로 표시하고 대기·조사 중·완료·오류 상태를 안내합니다. 보고서 본문은 Pydantic으로 검증하고 Sources는 API 메타데이터에서 별도로 보존합니다.
 
 ## 아직 구현되지 않은 것
 
-- LLM을 통한 주제 분석 및 보고서 생성
-- Web Search 및 실제 출처 수집·검증
-- 조사 계획, 재검색 등을 수행하는 Agent Loop
+- Multi-Agent
+- RAG
+- MCP
+- Reviewer Agent
+- 독립적인 URL 내용 재검증 및 보고서의 각 문장과 출처 사이의 자동 대조
 
 ## 향후 계획
 
-v0.2에서는 실제 자료 수집을 위한 Web Search Agent 연동 범위와 출처 검증 방식을 정의하고, 현재 구조화된 리포트 모델을 실제 조사 결과에 연결할 예정입니다. 이후 단계에서는 위의 개발 계획에 따라 Structured Output과 검색·Agent Step 제한 등을 검토합니다.
+v0.3에서는 출처 품질 평가, 보고서 주장과 근거의 자동 대조, 검색 결과가 부족할 때의 제한된 추가 조사, 결과 저장 및 공유를 검토할 예정입니다.
