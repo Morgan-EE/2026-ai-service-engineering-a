@@ -1,8 +1,7 @@
-import streamlit as st
 from html import escape
 
 from src.models import ResearchReport
-from src.web_research import ResearchError, generate_research_report
+from src.web_research import MAX_SEARCH_ROUNDS, ResearchError, generate_research_report
 
 
 def evidence_html(report: ResearchReport) -> str:
@@ -21,7 +20,27 @@ def evidence_html(report: ResearchReport) -> str:
 
 
 def show_report(report: ResearchReport) -> None:
+    import streamlit as st
+
     st.subheader("Research Report")
+
+    if report.research_plan is not None:
+        st.header("Research Plan")
+        st.write(f"조사 목표: {report.research_plan.goal}")
+        st.write("핵심 질문")
+        for question in report.research_plan.key_questions:
+            st.write(f"- {question}")
+        st.write("조사 관점")
+        for perspective in report.research_plan.perspectives:
+            st.write(f"- {perspective}")
+        st.write(f"초기 검색 방향: {report.research_plan.search_query}")
+
+    if report.search_queries:
+        st.header("Search Rounds")
+        st.write(f"검색 Round: {len(report.search_queries)} / {MAX_SEARCH_ROUNDS}")
+        st.write("추가 검색: 수행" if len(report.search_queries) > 1 else "추가 검색: 없음")
+        for index, query in enumerate(report.search_queries, start=1):
+            st.write(f"{index}차 검색 Query: {query}")
 
     st.header("Research Topic")
     st.write(report.topic)
@@ -50,6 +69,8 @@ def show_report(report: ResearchReport) -> None:
 
 
 def main() -> None:
+    import streamlit as st
+
     st.set_page_config(page_title="Engineering Research Agent")
     st.title("Engineering Research Agent")
     st.write(
@@ -66,14 +87,33 @@ def main() -> None:
         if not topic.strip():
             st.warning("기술 조사 주제를 입력해 주세요.")
         else:
-            with st.spinner("조사 중 · 웹 검색과 보고서 분석을 진행합니다..."):
+            report: ResearchReport | None = None
+            with st.status("조사 계획 수립 중...", expanded=True) as status:
+                def on_progress(stage: str, round_number: int, detail: str) -> None:
+                    if stage == "plan_ready":
+                        st.write(f"조사 계획 생성 · 초기 검색 방향: {detail}")
+                    elif stage == "search_start":
+                        status.update(label=f"{round_number}차 Web Search 진행 중...")
+                        st.write(f"{round_number}차 검색 Query: {detail}")
+                    elif stage == "search_complete":
+                        st.write(f"{round_number}차 검색 완료 · {detail}")
+                    elif stage == "assessment_start":
+                        status.update(label="1차 검색 충분성 평가 중...")
+                    elif stage == "assessment_complete":
+                        st.write(f"1차 검색 평가: {detail}")
+                    elif stage == "report_start":
+                        status.update(label="최종 보고서 작성 중...")
+
                 try:
-                    report = generate_research_report(topic)
+                    report = generate_research_report(topic, on_progress=on_progress)
                 except ResearchError as exc:
+                    status.update(label="조사 오류", state="error")
                     st.error(f"조사 오류 · {exc}")
                 else:
-                    st.success("조사 완료 · 실제 출처를 확인해 주세요.")
-                    show_report(report)
+                    status.update(label="조사 완료", state="complete")
+            if report is not None:
+                st.success("조사 완료 · 실제 출처를 확인해 주세요.")
+                show_report(report)
 
 
 if __name__ == "__main__":

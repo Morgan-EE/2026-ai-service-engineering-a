@@ -14,7 +14,9 @@ Engineering Research Agent는 소프트웨어 개발 과정에서 규모가 큰 
 ## 주요 기능
 
 - 개발 요구사항 및 기술 조사 주제 분석
+- 구조화된 Research Plan 생성
 - OpenAI Web Search를 활용한 기술 자료 수집
+- 1차 검색 충분성 판단 및 필요한 경우에만 추가 검색 1회
 - 공식 문서 및 구현 사례 정리
 - 구현 방법별 장단점 비교
 - 위험 요소 및 구현 전 확인사항 도출
@@ -22,11 +24,11 @@ Engineering Research Agent는 소프트웨어 개발 과정에서 규모가 큰 
 
 ## 기본 실행 흐름
 
-사용자 입력 → OpenAI Responses API Web Search (필수, 최대 2회 도구 호출) → 검색 내용 및 API 출처 메타데이터 수집 → Pydantic Structured Output으로 보고서 작성 → 출처 URL과 인라인 검색 근거 표시
+사용자 입력 → Research Plan → 1차 Web Search → 핵심 질문에 대한 근거 충분성 판단 → 충분하면 Report / 부족하면 2차 Web Search → Structured Research Report와 출처 표시
 
 ## 개발 계획
 
-v0.2에서는 두 번 이하의 모델 호출로 단일 조사 요청을 처리합니다. 무제한 Agent Loop는 사용하지 않습니다.
+v0.3은 최대 2회 검색으로 제한된 단일 Agent 흐름입니다. 무제한 Agent Loop는 사용하지 않습니다.
 
 이후 다음 기능을 단계적으로 적용할 예정입니다.
 
@@ -38,9 +40,11 @@ v0.2에서는 두 번 이하의 모델 호출로 단일 조사 요청을 처리�
 
 실제 개인 소프트웨어 프로젝트에서 규모가 큰 신규 기능을 개발하기 전 기술 검토 단계에 활용할 예정입니다. 공개 저장소에는 특정 프로젝트의 내부 정보와 무관한 범용 Agent 구조와 예제를 작성합니다.
 
-## Current Status: v0.2 Web Research
+## Current Status: v0.3 Research Loop
 
-현재 버전은 실제 OpenAI Web Search와 LLM 분석을 연결합니다. v0.1의 고정 Mock Report는 회귀 테스트와 예제로 남아 있지만 실행 UI에서는 사용하지 않습니다. 실제 출처 URL은 모델이 작성한 보고서 문자열에서 추출하지 않고 첫 번째 Web Search 응답의 `url_citation` 및 `web_search_call.action.sources`에서만 가져옵니다. 인용된 출처와 검색에서 참조된 출처를 구분해 표시하며, 검색 근거의 인라인 인용도 클릭할 수 있습니다. 출처가 없으면 보고서를 생성하지 않습니다.
+현재 버전은 실제 OpenAI Web Search와 LLM 분석을 연결합니다. v0.1의 고정 Mock Report는 회귀 테스트와 예제로 남아 있지만 실행 UI에서는 사용하지 않습니다. v0.3은 Pydantic Research Plan에 조사 목표, 핵심 질문, 조사 관점, 초기 검색 Query를 담습니다. 1차 검색 후 구조화된 충분성 평가(`sufficient`, `missing_points`, `follow_up_query`)를 수행하고, 부족한 경우에만 추가 검색을 한 번 실행합니다.
+
+실제 출처 URL은 모델이 작성한 보고서 문자열에서 추출하지 않고 각 Web Search 응답의 `url_citation` 및 `web_search_call.action.sources`에서만 가져옵니다. 두 검색의 출처는 URL 기준으로 중복 제거하며, 인용 여부도 보존합니다. 검색 근거의 인라인 인용은 클릭할 수 있습니다. 두 검색 후에도 실제 출처가 없으면 보고서를 생성하지 않습니다.
 
 ## 설치 및 실행
 
@@ -69,11 +73,15 @@ $env:OPENAI_API_KEY = "YOUR_KEY"
 streamlit run app.py
 ```
 
-브라우저에서 Streamlit이 안내하는 로컬 주소를 열고 주제를 입력한 뒤 **Generate Research Report**를 누릅니다. 빈 주제 또는 키 누락 시 API 요청 없이 안내가 표시됩니다. 모델 호출은 최대 2회, 첫 호출의 Web Search 도구 호출은 최대 2회이며 SDK 재시도는 비활성화했습니다. 각 API 호출 timeout은 45초입니다. 테스트는 저장소 루트에서 `python -m pytest`로 실행할 수 있습니다.
+브라우저에서 Streamlit이 안내하는 로컬 주소를 열고 주제를 입력한 뒤 **Generate Research Report**를 누릅니다. 계획, 검색 단계 및 Query, 검색 Round 수, 추가 검색 여부, 보고서와 Sources를 확인할 수 있습니다. 내부 Chain-of-Thought는 표시하지 않습니다.
+
+Harness 제약: `MAX_SEARCH_ROUNDS = 2`, 검색 Round당 `MAX_TOOL_CALLS_PER_ROUND = 1`, 모델 호출 최대 5회(계획·검색 1·충분성 평가·조건부 검색 2·보고서), SDK 자동 재시도 0회, API 호출당 timeout 45초입니다. 빈 주제 또는 키 누락 시 API 요청 없이 안내가 표시됩니다. 테스트는 저장소 루트에서 `python -m pytest`로 실행합니다. 실제 API E2E 검증은 프로젝트 기능 구현 완료 후 별도로 수행할 예정입니다.
 
 ## Report 구조
 
 - Research Topic (입력 주제 유지)
+- Research Plan (조사 목표, 핵심 질문, 조사 관점, 초기 검색 Query)
+- Search Rounds (실행 횟수, 사용한 Query, 추가 검색 여부)
 - Requirements Summary
 - Candidate Approaches
 - Comparison
@@ -83,9 +91,9 @@ streamlit run app.py
 - Sources (실제 API citation/source URL)
 - 검색 근거와 클릭 가능한 인라인 인용
 
-## v0.1과 달라진 점
+## v0.2와 달라진 점
 
-v0.1은 고정된 Mock 데이터를 표시했습니다. v0.2는 실제 검색과 LLM 분석 결과를 보고서로 표시하고 대기·조사 중·완료·오류 상태를 안내합니다. 보고서 본문은 Pydantic으로 검증하고 Sources는 API 메타데이터에서 별도로 보존합니다.
+v0.2는 단일 Web Search 후 보고서를 생성했습니다. v0.3은 검색 전에 계획을 만들고, 1차 근거가 핵심 질문에 충분한지 평가하며, 부족한 경우에만 2차 검색을 수행합니다. 기존 Research Report 구조와 API 메타데이터 기반 Sources는 유지합니다.
 
 ## 아직 구현되지 않은 것
 
@@ -97,4 +105,4 @@ v0.1은 고정된 Mock 데이터를 표시했습니다. v0.2는 실제 검색과
 
 ## 향후 계획
 
-v0.3에서는 출처 품질 평가, 보고서 주장과 근거의 자동 대조, 검색 결과가 부족할 때의 제한된 추가 조사, 결과 저장 및 공유를 검토할 예정입니다.
+다음 버전에서는 출처 품질 평가, 보고서 주장과 근거의 자동 대조, 결과 저장 및 공유를 검토할 예정입니다. 실제 API E2E 검증은 프로젝트 기능 구현 완료 후 수행합니다.
