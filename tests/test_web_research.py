@@ -98,6 +98,7 @@ def test_sufficient_first_round_skips_follow_up_and_keeps_topic_and_citation():
     assert client.responses.parse.call_args_list[0].kwargs["text_format"] is ResearchPlan
     assert client.responses.create.call_args.kwargs["tool_choice"] == "required"
     assert client.responses.create.call_args.kwargs["max_tool_calls"] == MAX_TOOL_CALLS_PER_ROUND
+    assert "inline citation" in client.responses.create.call_args.kwargs["input"]
     assert events.index(("plan_ready", 0, "file upload architecture official docs")) < events.index(
         ("search_start", 1, "file upload architecture official docs"))
 
@@ -137,6 +138,28 @@ def test_no_source_after_two_rounds_fails_before_report():
     with pytest.raises(ResearchError, match="실제 출처"):
         generate_research_report("업로드 설계", client=client)
     assert client.responses.create.call_count == 2
+    assert client.responses.parse.call_count == 2
+
+
+def test_missing_inline_citation_triggers_one_follow_up_even_if_evidence_is_sufficient():
+    client = client_for([search_response(cited_url=None), search_response()], sufficient=True)
+
+    report = generate_research_report("업로드 설계", client=client)
+
+    assert client.responses.create.call_count == MAX_SEARCH_ROUNDS
+    assert len(report.search_queries) == MAX_SEARCH_ROUNDS
+    assert report.source_details[0].cited
+    assert report.citation_spans
+
+
+def test_missing_inline_citation_after_two_rounds_fails_before_report():
+    uncited = search_response(cited_url=None)
+    client = client_for([uncited, uncited], sufficient=True)
+
+    with pytest.raises(ResearchError, match="인라인 인용"):
+        generate_research_report("업로드 설계", client=client)
+
+    assert client.responses.create.call_count == MAX_SEARCH_ROUNDS
     assert client.responses.parse.call_count == 2
 
 

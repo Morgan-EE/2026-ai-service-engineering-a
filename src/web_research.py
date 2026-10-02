@@ -86,8 +86,10 @@ def _search(client, model: str, topic: str, query: str):
         include=["web_search_call.action.sources"],
         input=(
             f"개발 기술 조사 주제: {topic}\n검색 방향: {query}\n"
-            "공식 문서와 신뢰할 수 있는 기술 자료를 우선하여 조사하세요. "
-            "해당 검색 방향의 사실과 선택 기준을 근거와 함께 요약하고 인라인 인용을 포함하세요."
+            "Prioritize official documentation for the technologies named in the topic. "
+            "Summarize the facts and decision criteria in Korean. "
+            "For each factual paragraph, include an inline citation to the exact web source used. "
+            "Use web search citation annotations; do not give an uncited answer."
         ),
     )
     searched, sources, spans = _search_metadata(response)
@@ -183,7 +185,7 @@ def generate_research_report(
         if _value(assessment_response, "status") != "completed" or assessment is None:
             raise ResearchError("검색 충분성을 평가하지 못했습니다.")
 
-        needs_follow_up = not assessment.sufficient or not sources_by_url
+        needs_follow_up = not assessment.sufficient or not sources_by_url or not citation_spans
         progress("assessment_complete", 1, "추가 검색 필요" if needs_follow_up else "근거 충분")
         if needs_follow_up and len(search_queries) < MAX_SEARCH_ROUNDS:
             follow_up = (assessment.follow_up_query or "").strip()
@@ -193,6 +195,8 @@ def generate_research_report(
 
         if not sources_by_url:
             raise ResearchError("실제 출처를 확인할 수 없어 보고서를 생성하지 않았습니다.")
+        if not citation_spans:
+            raise ResearchError("실제 인라인 인용을 확인할 수 없어 보고서를 생성하지 않았습니다.")
 
         progress("report_start", len(search_queries))
         evidence = "\n\n".join(evidence_parts)
