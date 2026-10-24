@@ -20,6 +20,37 @@ def evidence_html(report: ResearchReport) -> str:
     return "".join(parts).replace("\n", "<br>")
 
 
+def apply_theme(dark_mode: bool) -> None:
+    """Apply the optional presentation theme without changing research behavior."""
+    if not dark_mode:
+        return
+
+    import streamlit as st
+
+    st.markdown(
+        """
+        <style>
+        .stApp { background: #111827; color: #f3f4f6; }
+        [data-testid="stHeader"] { background: #111827; }
+        [data-testid="stToolbar"] { color: #f3f4f6; }
+        h1, h2, h3, p, label, li, .stCaption { color: #f3f4f6 !important; }
+        [data-testid="stTextArea"] textarea,
+        [data-baseweb="input"] input {
+            background: #1f2937 !important;
+            color: #f3f4f6 !important;
+            border-color: #4b5563 !important;
+        }
+        [data-testid="stExpander"], [data-testid="stAlert"] {
+            background: #1f2937;
+            border-color: #4b5563;
+        }
+        [data-testid="stMarkdownContainer"] a { color: #93c5fd !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def show_report(report: ResearchReport) -> None:
     import streamlit as st
 
@@ -88,6 +119,8 @@ def main() -> None:
     import streamlit as st
 
     st.set_page_config(page_title="Engineering Research Agent", layout="wide")
+    dark_mode = st.toggle("다크 모드", key="dark_mode")
+    apply_theme(dark_mode)
     st.title("Engineering Research Agent")
     st.write(
         "개발 기술 조사 주제를 입력하면 실제 Web Search와 LLM 분석으로 "
