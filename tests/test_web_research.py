@@ -5,7 +5,7 @@ import pytest
 from openai import OpenAIError
 
 from app import evidence_html
-from src.models import ResearchPlan, ResearchReport
+from src.models import ApproachDetail, CommercialExample, ResearchPlan, ResearchReport
 from src.web_research import (
     MAX_SEARCH_ROUNDS,
     MAX_TOOL_CALLS_PER_ROUND,
@@ -30,6 +30,7 @@ def plan_response():
         key_questions=["성능 차이는?", "보안 조건은?"],
         perspectives=["비용", "운영"],
         search_query="file upload architecture official docs",
+        commercial_search_query="commercial upload products official API engineering docs",
     ))
 
 
@@ -43,12 +44,31 @@ def assessment_response(sufficient: bool):
 
 def sections_response():
     return parsed(ReportSections(
-        requirements_summary=["업로드 크기 확인"],
+        executive_summary=["결정은 업로드 크기와 신뢰 경계에 좌우된다.", "사전 서명 URL이 운영 부담을 줄인다."],
+        technical_scope=["대용량 업로드 경로", "인증된 클라이언트"],
+        decision_criteria=["지연 시간", "권한 경계", "운영 비용"],
+        requirements_summary=["업로드 크기 확인", "권한 경계 확인"],
         approaches=["서버 직접 업로드", "Presigned URL"],
-        comparison=["전송 비용과 운영 부담 비교"],
+        approach_details=[
+            ApproachDetail(name="서버 직접 업로드", architecture="API 서버가 바이트 스트림을 중계한다.",
+                           best_fit="작은 파일", strengths=["단순한 제어"], tradeoffs=["서버 대역폭 부담"],
+                           implementation_steps=["인증된 업로드 API 구현", "저장소 스트림 연결"]),
+            ApproachDetail(name="Presigned URL", architecture="클라이언트가 객체 저장소에 직접 전송한다.",
+                           best_fit="대용량 파일", strengths=["수평 확장"], tradeoffs=["만료 정책 필요"],
+                           implementation_steps=["권한 확인 후 서명 URL 발급", "업로드 완료 검증"]),
+        ],
+        comparison=["전송 비용과 운영 부담 비교", "신뢰 경계 비교"],
         recommended_direction="파일 크기에 따라 선택",
-        risks=["권한 검증"],
-        checklist=["최대 크기 테스트"],
+        implementation_plan=["위협 모델 정의", "전송 경로 구현", "관측성 추가"],
+        validation_plan=["부하 테스트", "권한 테스트", "복구 테스트"],
+        risks=["권한 검증", "중단된 전송"],
+        checklist=["최대 크기 테스트", "만료 시간 테스트", "감사 로그 확인"],
+        evidence_limitations=["실제 워크로드 수치는 별도 측정이 필요하다."],
+        commercial_examples=[CommercialExample(
+            product="Example Upload (테스트용 가상 제품)", observed_features="파일 직접 업로드 API",
+            disclosed_implementation="내부 구현 비공개/미확인", implementation_takeaway="완료 검증 경로 구현",
+            evidence_status="not_disclosed", source_urls=[SOURCE_A],
+        )],
     ))
 
 
@@ -73,12 +93,12 @@ def search_response(urls=(SOURCE_A,), cited_url=SOURCE_A, evidence="Evidence ref
 
 def client_for(searches, sufficient=True):
     return Obj(responses=Obj(
-        create=Mock(side_effect=searches),
+        create=Mock(side_effect=searches if len(searches) > 1 else searches * 2),
         parse=Mock(side_effect=[plan_response(), assessment_response(sufficient), sections_response()]),
     ))
 
 
-def test_sufficient_first_round_skips_follow_up_and_keeps_topic_and_citation():
+def test_sufficient_technical_evidence_still_runs_commercial_research():
     client = client_for([search_response()])
     events = []
 
@@ -88,12 +108,16 @@ def test_sufficient_first_round_skips_follow_up_and_keeps_topic_and_citation():
     assert isinstance(report, ResearchReport)
     assert report.topic == "파일 업로드 설계"
     assert report.research_plan.goal == "파일 업로드 방식 선택"
-    assert report.search_queries == ["file upload architecture official docs"]
+    assert report.search_queries == ["file upload architecture official docs",
+                                     "commercial upload products official API engineering docs"]
     assert report.sources == [SOURCE_A]
     assert report.source_details[0].cited
-    assert report.citation_spans == [(9, 12, "Cited docs", SOURCE_A)]
+    assert report.citation_spans[0] == (9, 12, "Cited docs", SOURCE_A)
+    assert len(report.citation_spans) == 2
     assert report.recommended_direction == "파일 크기에 따라 선택"
-    assert client.responses.create.call_count == 1
+    assert report.approach_details[1].name == "Presigned URL"
+    assert report.provider == "OpenAI"
+    assert client.responses.create.call_count == 2
     assert client.responses.parse.call_count == 3
     assert client.responses.parse.call_args_list[0].kwargs["text_format"] is ResearchPlan
     assert client.responses.create.call_args.kwargs["tool_choice"] == "required"
@@ -112,7 +136,7 @@ def test_insufficient_runs_exactly_one_follow_up_and_merges_sources():
     report = generate_research_report("업로드 설계", client=client)
 
     assert report.search_queries == ["file upload architecture official docs",
-                                     "presigned URL security official docs"]
+                                     "commercial upload products official API engineering docs; technical gaps: presigned URL security official docs"]
     assert len(report.search_queries) == MAX_SEARCH_ROUNDS == 2
     assert client.responses.create.call_count == 2
     assert client.responses.parse.call_count == 3  # No assessment or search after round two.
@@ -174,7 +198,7 @@ def test_blank_topic_does_not_call_api():
 def test_missing_key_fails_before_api_client(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ResearchError, match="OPENAI_API_KEY"):
-        generate_research_report("업로드 설계")
+        generate_research_report("업로드 설계", provider="openai")
 
 
 def test_api_error_is_wrapped_without_retry():
