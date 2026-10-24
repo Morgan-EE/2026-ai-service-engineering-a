@@ -1,574 +1,196 @@
 # Engineering Research Agent
 
-개발 기능을 설계하기 전에 기술 선택지와 구현 위험을 조사하는 AI 기반 기술 조사 Agent입니다.
+**개발하고 싶은 기능을 입력하면 구현 방법과 상용 프로그램 사례를 조사해 주는 Streamlit 기술 조사 에이전트입니다.**
 
-사용자가 개발 요구사항이나 기술 조사 주제를 입력하면 Research Plan을 생성하고, OpenAI Web Search를 통해 실제 기술 자료를 수집합니다. 이후 검색 결과가 핵심 질문을 충분히 다루고 있는지 평가하고, 필요한 경우에만 추가 검색을 수행합니다.
+어떤 방식으로 구현할 수 있는지, 실제 개발에 필요한 처리 흐름·구현 단계·선택 기준을 정리합니다. Claude 또는 OpenAI의 웹 검색으로 근거를 수집하고, 결과를 화면과 Markdown 보고서로 제공합니다.
 
-수집한 근거를 바탕으로 구현 방법별 비교, 권장 방향, 주요 위험 요소, 구현 전 확인사항 및 실제 출처가 포함된 구조화된 Research Report를 생성합니다.
+AI 서비스 엔지니어링 트랙 A 프로젝트입니다. 기본 제공자는 **Claude (Anthropic)**이며, 환경변수로 OpenAI를 선택할 수 있습니다.
 
-결과는 Streamlit 화면에서 확인하거나 Markdown 파일로 다운로드할 수 있습니다.
+## 어떤 결과를 얻을 수 있나요?
 
----
-
-## Current Status: Final E2E Validated
-
-Engineering Research Agent의 핵심 기능 구현과 실제 OpenAI API 기반 E2E 검증을 완료했습니다.
-
-현재 Agent의 전체 흐름은 다음과 같습니다.
+예를 들어 다음과 같이 입력합니다.
 
 ```text
-사용자 조사 주제 입력
-        ↓
-Research Plan 생성
-        ↓
-1차 Web Search
-        ↓
-검색 결과 충분성 평가
-        ↓
-근거 충분 ───────────────→ Research Report 생성
-        │
-        └─ 근거 부족
-              ↓
-        조건부 2차 Web Search
-              ↓
-        Research Report 생성
-              ↓
-        Sources / Citation 표시
-              ↓
-        Markdown 다운로드
+이미지 누끼 따는 기능을 구현하고 싶어. 구현 방법과 상용 프로그램 사례를 조사해줘.
 ```
 
-검색은 최대 2 Round로 제한하며 무제한 Agent Loop를 사용하지 않습니다.
+보고서는 조사 계획보다 **결과를 먼저** 보여줍니다.
 
-최종 실제 API E2E 검증에서는 Spring Boot 대용량 파일 업로드 기술 조사를 수행하여 다음 전체 흐름을 확인했습니다.
+1. **조사 결과 · 구현 방식 요약** — “구현 방식에는 크게 A, B, C 등이 있습니다.”라는 개요와 방식별 처리 흐름·구현 단계·적합한 상황·권장 시작점
+2. **상용 프로그램 사례와 적용 설계** — 제품별 확인된 기능, 공개된 구현 방식, 우리 서비스에 적용할 설계 제안, 근거 상태와 출처
+3. **상세 기술 조사** — 조사 계획·검색 이력·요구사항, 아키텍처와 장단점, 비교·권장안, 위험, 구현·검증 계획, 체크리스트와 근거 한계
+4. **Sources 및 검색 근거** — 검색 API가 반환한 출처와 클릭 가능한 인용
 
-- Research Plan 생성
-- 1차 Web Search
-- 검색 결과 충분성 평가
-- 조건부 2차 Web Search
-- Structured Research Report 생성
-- 실제 Sources 표시
-- API `url_citation` 표시
-- 클릭 가능한 인라인 citation
-- Streamlit 화면 렌더링
-- Markdown Report 다운로드
+누끼 기능이라면 외부 API 연동·서버 자체 호스팅·브라우저/온디바이스 추론 같은 접근을 검토할 수 있습니다. 이는 조사 관점의 예시이며, 실제 보고서와 확인 가능한 제품 사례는 검색 근거에 따라 달라집니다.
 
-최종 E2E 검증 결과:
-
-- Web Search: **2 / 2 Round 정상 수행**
-- 중복 제거된 실제 HTTP(S) Sources: **17개**
-- API `url_citation`: **3개**
-- pytest: **19개 통과**
-- Python compile/import 검사 통과
-- Streamlit health endpoint: **HTTP 200**
-- Markdown UTF-8 다운로드 및 Report 섹션·Source URL 확인
-
-실제 출처 URL은 모델이 작성한 본문에서 생성하거나 추출하지 않습니다.
-
-OpenAI Web Search API가 반환한 `url_citation` 또는 `web_search_call.action.sources` 메타데이터에서만 수집합니다.
-
----
+상용 제품의 내부 알고리즘이나 모델이 공개되지 않았으면 **내부 구현 비공개/미확인**으로 표시합니다. 우리 서비스에 적용할 아이디어는 설계 제안으로 작성하고, 근거를 확보하지 못한 내용은 미확인 또는 보고서 한계에 남깁니다.
 
 ## 주요 기능
 
-- 개발 기술 조사 주제 입력
-- Research Plan 자동 생성
-- 조사 목표 및 핵심 질문 정의
-- OpenAI Responses API Web Search
-- 검색 결과 충분성 평가
-- 부족한 근거에 대한 조건부 추가 검색
-- 최대 검색 Round 제한
-- Pydantic Structured Output 기반 Report 생성
-- 구현 방식별 비교
-- Recommended Direction 생성
-- 주요 위험 요소 및 구현 Checklist 제공
-- 실제 API Source / Citation 표시
-- Source URL 중복 제거
-- 클릭 가능한 인라인 Citation
-- Markdown Report 다운로드
-- API 오류 및 출처 누락 처리
-
----
+- Claude Messages API 또는 OpenAI Responses API로 기술 조사
+- 공식 문서·기술 문서·논문을 우선하는 조사 계획과 웹 검색
+- **1차 기술 구현 방식 조사 → 충분성 평가 → 2차 상용 사례 및 부족한 근거 조사**
+- Pydantic으로 검증하는 구조화 보고서와 방식별 구현 단계
+- 상용 사례 비교 및 검색 출처와의 URL 연결 검증
+- 결과 중심 UI와 동일한 순서의 Markdown 다운로드
+- 다크 모드 토글, 단계별 진행 상태, 마지막 결과 유지
+- Claude 스키마 호환 처리 및 실패 단계·종료 사유 안내
 
 ## 실행 흐름
 
-### 1. Research Plan
-
-사용자의 조사 주제를 바탕으로 다음 정보를 포함한 Research Plan을 생성합니다.
-
-- 조사 목표
-- 핵심 질문
-- 조사 관점
-- 초기 Search Query
-
-Research Plan은 Pydantic Structured Output으로 관리합니다.
-
-### 2. 1차 Web Search
-
-OpenAI Responses API의 `web_search` Tool을 이용하여 실제 웹 자료를 조사합니다.
-
-조사 시 공식 문서와 신뢰할 수 있는 기술 자료를 우선하도록 요청합니다.
-
-Web Search 응답에서 다음 정보를 수집합니다.
-
-- 검색 결과 Evidence
-- `url_citation`
-- `web_search_call.action.sources`
-
-### 3. 충분성 평가
-
-1차 검색 결과가 Research Plan의 핵심 질문을 충분히 다루는지 평가합니다.
-
-평가 결과는 다음과 같이 구조화됩니다.
-
-- `sufficient`
-- `missing_points`
-- `follow_up_query`
-
-### 4. 조건부 2차 검색
-
-1차 검색 결과가 충분하면 추가 검색 없이 Report 생성 단계로 이동합니다.
-
-근거가 부족하거나 필요한 Citation이 확보되지 않은 경우에만 추가 검색을 한 번 수행합니다.
-
-검색 Round는 최대 2회입니다.
-
-### 5. Research Report
-
-수집된 검색 Evidence를 기반으로 최종 Research Report를 생성합니다.
-
-Report 본문은 Pydantic Structured Output을 이용하여 구조화합니다.
-
----
-
-## Research Report 구조
-
-생성되는 Report에는 다음 정보가 포함됩니다.
-
-### Research Topic
-
-사용자가 입력한 기술 조사 주제입니다.
-
-### Research Plan
-
-- Goal
-- Key Questions
-- Perspectives
-- Initial Search Query
-
-### Search History
-
-- Search Round 수
-- 각 Round에서 사용한 Query
-- 추가 검색 여부
-
-### Requirements Summary
-
-조사 주제의 주요 요구사항을 정리합니다.
-
-### Candidate Approaches
-
-검토 가능한 구현 방식 또는 기술 선택지를 정리합니다.
-
-### Comparison
-
-후보 방식들의 차이와 선택 기준을 비교합니다.
-
-### Recommended Direction
-
-현재 조사 결과를 기준으로 권장할 수 있는 구현 방향을 정리합니다.
-
-### Key Risks
-
-구현 과정에서 고려해야 할 주요 위험 요소를 정리합니다.
-
-### Implementation Checklist
-
-실제 구현 전에 확인해야 할 항목을 제공합니다.
-
-### Sources
-
-OpenAI Web Search API가 반환한 실제 Source URL과 Citation 정보를 표시합니다.
-
----
-
-## 출처 처리 정책
-
-Engineering Research Agent는 모델이 생성한 텍스트에서 URL을 추출하지 않습니다.
-
-Sources는 다음 API 메타데이터에서만 수집합니다.
-
-```text
-url_citation
-web_search_call.action.sources
+```mermaid
+flowchart TD
+    A[개발 기능 또는 기술 주제 입력] --> B[조사 계획 생성]
+    B --> C[1차: 기술 구현 방식 검색]
+    C --> D[검색 충분성 평가]
+    D --> E[2차: 상용 사례와 부족한 근거 검색]
+    E --> F[구조화 보고서 생성 및 출처 검증]
+    F --> G[결과 요약 · 상용 사례 · 상세 보고서]
+    G --> H[Markdown 다운로드]
 ```
 
-각 검색 Round의 출처는 URL을 기준으로 중복 제거합니다.
+정상 완료 경로는 모델 요청 5단계이며, 검색은 최대 2라운드·라운드당 도구 사용 1회로 제한합니다. 상용 사례 조사를 위해 두 번째 검색도 수행합니다. 중간 오류가 발생하면 그 단계에서 종료하며 SDK 자동 재시도와 다른 제공자로의 자동 전환은 사용하지 않습니다.
 
-실제 Source 또는 Citation을 확인할 수 없는 경우 정상적인 Report로 처리하지 않습니다.
+## 설치
 
-최종 E2E 검증 과정에서 Web Search Source는 존재하지만 인라인 Citation이 생성되지 않는 상황을 발견했고, 이를 보완했습니다.
-
-현재는 Citation이 확보되지 않은 경우 검색 Round 상한 내에서 추가 검색을 수행하며, 최대 검색 이후에도 검증된 인라인 Citation이 없으면 Report 생성을 중단합니다.
-
----
-
-## Harness / 실행 제한
-
-Agent의 무제한 실행과 불필요한 API 사용을 방지하기 위해 애플리케이션 수준에서 실행을 제한합니다.
-
-```text
-MAX_SEARCH_ROUNDS = 2
-MAX_TOOL_CALLS_PER_ROUND = 1
-API_TIMEOUT_SECONDS = 45
-SDK_MAX_RETRIES = 0
-```
-
-하나의 정상적인 조사 요청에서 수행될 수 있는 모델 단계는 최대 다음과 같습니다.
-
-```text
-1. Research Plan 생성
-2. 1차 Web Search
-3. 충분성 평가
-4. 조건부 2차 Web Search
-5. Research Report 생성
-```
-
-다음 상황에서는 오류를 반환합니다.
-
-- 빈 조사 주제
-- API Key 누락
-- OpenAI API 오류
-- Research Plan 구조화 실패
-- Web Search 실패
-- 실제 Source 누락
-- 최종 Citation 누락
-- Structured Report 생성 실패
-
-무제한 재시도 및 무제한 Agent Loop는 사용하지 않습니다.
-
----
-
-## Streamlit UI
-
-Streamlit 화면에서는 다음 정보를 확인할 수 있습니다.
-
-- 조사 대기 상태
-- Research Plan 생성 상태
-- Web Search 진행 상태
-- 충분성 평가 상태
-- 조건부 추가 검색 상태
-- Report 생성 상태
-- Research Plan
-- Search Round
-- Search Query
-- 최종 Research Report
-- Sources
-- 검색 Evidence
-- 클릭 가능한 인라인 Citation
-- Markdown 다운로드
-
-Agent 내부 Chain-of-Thought는 노출하지 않습니다.
-
-Research Plan, Query, 검색 Round와 같이 사용자에게 공개 가능한 실행 정보만 표시합니다.
-
----
-
-## Markdown 다운로드
-
-조사가 완료되면 **Download Markdown Report** 버튼을 이용하여 결과를 Markdown 파일로 저장할 수 있습니다.
-
-기본 파일명:
-
-```text
-engineering-research-report.md
-```
-
-Markdown Report에는 다음 내용이 포함됩니다.
-
-- Research Topic
-- Research Plan
-- Search History
-- Requirements Summary
-- Candidate Approaches
-- Comparison
-- Recommended Direction
-- Key Risks
-- Implementation Checklist
-- Sources
-
-Sources에는 실제 API metadata에서 수집한 Source title과 URL이 포함됩니다.
-
-최종 E2E 검증에서는 실제 조사 결과를 브라우저에서 Markdown 파일로 다운로드하고 UTF-8 내용 및 Report 섹션과 Source URL을 확인했습니다.
-
----
-
-## 설치 및 실행
-
-Python 3.12 이상이 필요합니다.
-
-저장소를 Clone한 뒤 프로젝트 루트로 이동합니다.
-
-```bash
-git clone https://github.com/Morgan-EE/2026-ai-service-engineering-a.git
-cd 2026-ai-service-engineering-a
-```
-
-가상 환경을 생성합니다.
-
-```bash
-python -m venv .venv
-```
-
-Windows PowerShell:
+Python **3.12 이상**이 필요합니다. Windows PowerShell에서:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+git clone https://github.com/Morgan-EE/2026-ai-service-engineering-a.git
+cd 2026-ai-service-engineering-a
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+가상환경의 Python을 직접 사용하므로 `Activate.ps1` 실행이나 전역 Python의 Streamlit 설치가 필요하지 않습니다.
+
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+## API 설정
+
+앱은 **실행 프로세스의 환경변수**를 읽습니다. API 키는 코드·설정 파일·Git에 넣지 않습니다. `.env.example`은 변수 이름 참고용이며 앱이 `.env` 파일을 자동으로 불러오지는 않습니다.
+
+| 제공자 | `RESEARCH_PROVIDER` | 필요한 키 | 선택 모델 환경변수 | 코드의 기본 모델 |
+| --- | --- | --- | --- | --- |
+| Claude (기본) | `anthropic` 또는 `claude` | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-4.1-mini` |
+
+선택한 제공자의 키만 필요합니다. 실제 조사를 실행하면 해당 제공자의 API·검색 사용 요금이 발생할 수 있습니다.
+
+### PowerShell에서 키를 가려서 입력하기
+
+아래 예시는 키를 현재 PowerShell과 그 하위 앱 프로세스에만 설정합니다. 키는 입력 프롬프트에 넣습니다.
+
+```powershell
+$env:RESEARCH_PROVIDER = "anthropic"
+$researchSecureKey = Read-Host "ANTHROPIC_API_KEY" -AsSecureString
+$researchKeyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($researchSecureKey)
+try {
+    $env:ANTHROPIC_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($researchKeyPtr)
+}
+finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($researchKeyPtr)
+    $researchSecureKey.Dispose()
+    Remove-Variable researchSecureKey, researchKeyPtr
+}
+```
+
+OpenAI를 사용할 때는 `RESEARCH_PROVIDER` 값을 `openai`로 하고 키 변수 이름을 `OPENAI_API_KEY`로 바꿉니다.
+
+### Windows 사용자 환경변수를 이미 설정한 경우
+
+새 PowerShell 창에서 다음과 같이 사용자 환경변수를 현재 프로세스로 읽을 수 있습니다. 키 값을 출력하지 않습니다.
+
+```powershell
+$env:RESEARCH_PROVIDER = [Environment]::GetEnvironmentVariable("RESEARCH_PROVIDER", "User")
+$env:ANTHROPIC_API_KEY = [Environment]::GetEnvironmentVariable("ANTHROPIC_API_KEY", "User")
+```
+
+Windows 사용자 환경변수는 계정에 지속 저장됩니다. 앱을 실행한 뒤 환경변수를 바꿨다면 앱을 종료하고 다시 실행해야 반영됩니다.
+
+## 실행 및 시연
+
+프로젝트 폴더에서:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
 macOS / Linux:
 
 ```bash
-source .venv/bin/activate
+.venv/bin/python -m streamlit run app.py
 ```
 
-의존성을 설치합니다.
+기본 주소는 [http://localhost:8501](http://localhost:8501)입니다. 포트가 이미 사용 중이면 실행 창에 표시되는 주소를 확인하세요.
 
-```bash
-python -m pip install -r requirements.txt
-```
+상단 제공자 표시 확인 → 기술 주제 입력 → **Generate Research Report** → 구현 방식 요약과 상용 사례 확인 → 상세 보고서·Sources 확인 → **Markdown 다운로드** 순서로 시연합니다.
 
----
+다운로드 파일명은 `engineering-research-report.md`입니다. 화면의 핵심 결과·상용 사례·기술 분석·출처를 함께 내보냅니다. 실행 창에서 `Ctrl+C`를 누르면 앱을 종료할 수 있습니다.
 
-## 환경변수
+## 실행 제한과 출처 정책
 
-`OPENAI_API_KEY`가 필요합니다.
+| 항목 | 현재 코드 설정 |
+| --- | --- |
+| 최대 검색 라운드 / 라운드당 도구 사용 | 2 / 1 |
+| SDK 자동 재시도 | 0 |
+| 기본 API 대기 시간 | 45초 |
+| Claude 계획 / 충분성 평가 출력 한도 | 2,048 / 1,536토큰 |
+| Claude 검색 출력 한도 | 라운드당 4,096토큰 |
+| 최종 보고서 출력 한도 | 23,184토큰 |
+| Claude 보고서 작성 대기 시간 | 최대 600초 |
 
-Windows PowerShell:
+보고서 한도는 참고 문서의 로컬 토큰 추정치 15,456에 50% 여유를 더한 값입니다. Claude의 정확한 토큰 수를 측정한 값은 아니며 실제 출력 길이가 항상 한도에 도달하는 것은 아닙니다.
+
+- 출처 목록은 모델 본문에서 URL을 추출해 만들지 않고 검색 API의 메타데이터에서 수집합니다.
+- OpenAI는 `url_citation`과 `web_search_call.action.sources`, Claude는 검색 결과 블록과 인용의 URL을 사용합니다.
+- HTTP(S) URL을 수집하고 중복을 제거합니다. 최종 검색 결과에 출처나 인라인 인용이 없으면 보고서 생성을 중단합니다.
+- 상용 사례의 출처 URL은 수집한 메타데이터 안에 있어야 합니다. 미확인 사례를 제외하면 사례별 근거 URL도 필요합니다.
+- URL 확인이 모든 주장과 출처의 의미를 자동 대조한다는 뜻은 아닙니다. 중요한 기술 선택·라이선스·가격 정보는 연결된 공식 자료로 재확인해야 합니다.
+- 제한된 검색으로 모든 경쟁 제품·벤치마크·가격·운영 정책을 확인하지 못할 수 있습니다. 미확인 항목은 보고서에 표시합니다.
+
+## 오류 점검
+
+| 증상 | 점검 방법 |
+| --- | --- |
+| `No module named streamlit` | `.\.venv\Scripts\python.exe` 사용 및 의존성 설치 확인 |
+| API 키 환경변수 누락 | 선택한 제공자에 맞는 키를 실행 PowerShell에 설정하고 앱 재시작 |
+| `AuthenticationError` | 해당 제공자의 유효한 API 키인지 확인 |
+| Claude HTTP 400 | 표시된 실패 단계와 스키마·모델·웹 검색 설정 안내 확인 |
+| `max_tokens` | 출력 한도에서 응답이 잘린 상태. 부분 보고서를 정상 결과로 사용하지 않음 |
+| `refusal` / `pause_turn` / `empty_text` | 표시된 종료 사유 확인. 앱은 자동 재요청하지 않음 |
+| 출처 또는 인라인 인용 누락 | 조사 범위를 구체화하고 공식 자료를 찾을 수 있는 주제로 조정 |
+| 시간 초과 | 인터넷 연결·제공자 상태·조사 범위·실행 창 로그 확인 |
+
+## 로컬 검증
 
 ```powershell
-$env:OPENAI_API_KEY = "YOUR_KEY"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q app.py src tests
 ```
 
-선택적으로 사용할 모델을 지정할 수 있습니다.
+2026-10-24 기준 **37개 테스트 통과**, 컴파일 검사 및 Streamlit 로컬 HTTP 200 응답을 확인했습니다. 테스트는 Mock/Stub과 메모리 HTTP 전송기를 사용하며 실제 유료 모델 API를 호출하지 않습니다. Claude 회귀 테스트는 외부 소켓 연결을 차단하고 화면 테스트에 필요한 Windows 내부 루프백 연결만 허용합니다.
 
-```powershell
-$env:OPENAI_MODEL = "gpt-4.1-mini"
-```
-
-기본 모델:
-
-```text
-gpt-4.1-mini
-```
-
-`.env.example`은 필요한 환경변수의 예시입니다.
-
-실제 API Key는 코드에 하드코딩하지 않으며 `.env` 파일은 Git에서 제외됩니다.
-
----
-
-## 실행
-
-```bash
-python -m streamlit run app.py
-```
-
-브라우저에서 Streamlit이 제공하는 로컬 주소에 접속합니다.
-
-기술 조사 주제를 입력한 뒤 **Generate Research Report** 버튼을 누르면 조사가 시작됩니다.
-
-예시:
-
-```text
-Spring Boot 애플리케이션에서 대용량 파일 업로드를 구현할 때
-서버 직접 업로드와 S3 Presigned URL 방식의 차이,
-보안·비용·확장성 측면의 선택 기준을 조사해줘.
-```
-
----
+Claude 스키마 변환·종료 사유·검색 상한·상용 사례 출처 검증·Markdown 구성·Streamlit 보고서 표시를 로컬에서 검증합니다. 최신 상용 사례 조사 흐름의 실제 API 품질 검증은 이 테스트 결과와 별개입니다.
 
 ## 프로젝트 구성
 
 | 파일 | 역할 |
 | --- | --- |
-| `app.py` | 사용자 입력, 진행 상태, Report 및 Markdown 다운로드 UI |
-| `src/models.py` | Research Plan, Source, Research Report 모델 |
-| `src/web_research.py` | Research Plan, Web Search, 충분성 평가, 제한된 Agent Loop 및 출처 수집 |
-| `src/markdown_export.py` | Research Report를 Markdown으로 변환 |
-| `src/mock_report.py` | v0.1 예제 및 회귀 테스트용 Mock |
-| `tests/test_web_research.py` | Web Search 분기, Agent Loop, Source/Citation 및 오류 처리 테스트 |
-| `tests/test_markdown_export.py` | Markdown 변환 및 파일명 처리 테스트 |
+| `app.py` | 입력·진행 상태·보고서·다크 모드·다운로드 |
+| `src/web_research.py` | 제공자 선택, 계획·검색·평가·보고서, 출처와 오류 처리 |
+| `src/models.py` | 계획·구현 방식·상용 사례·보고서 데이터 모델 |
+| `src/markdown_export.py` | 결과 요약·상용 사례 표·상세 보고서의 Markdown 변환 |
+| `src/mock_report.py` | 과거 Mock 예제 및 호환성 회귀 테스트용 데이터 |
+| `tests/test_anthropic_research.py` | Claude 요청·스키마·종료 사유·상용 출처·화면 검증 |
+| `tests/test_web_research.py` | OpenAI 경로, 검색 상한·출처·오류 처리 검증 |
+| `tests/test_markdown_export.py` | 결과 순서·상용 사례·출처·Markdown 출력 검증 |
 | `requirements.txt` | Python 의존성 |
-| `.env.example` | 환경변수 설정 예시 |
+| `.env.example` | 환경변수 이름과 기본값 예시 |
 
----
-
-## 테스트
-
-전체 단위 테스트:
-
-```bash
-python -m pytest -q
-```
-
-Python compile 검사:
-
-```bash
-python -m compileall -q app.py src tests
-```
-
-단위 테스트에서는 실제 OpenAI API를 호출하지 않고 Mock / Stub을 사용합니다.
-
-현재 최종 테스트 결과:
-
-```text
-19 passed
-```
-
-최종 통합 단계에서는 별도로 실제 OpenAI API 기반 E2E 검증도 수행했습니다.
-
----
-
-## 실제 E2E 검증
-
-최종 통합 검증에서는 다음 주제를 사용했습니다.
-
-```text
-Spring Boot 애플리케이션에서 대용량 파일 업로드를 구현할 때
-서버 직접 업로드와 S3 Presigned URL 방식의 차이,
-보안·비용·확장성 측면의 선택 기준을 조사해줘.
-```
-
-검증 결과:
-
-| 항목 | 결과 |
-| --- | --- |
-| Research Plan | 성공 |
-| 1차 Web Search | 성공 |
-| 충분성 평가 | 성공 |
-| 조건부 2차 Web Search | 수행 |
-| Search Round | 2 / 2 |
-| Structured Report | 성공 |
-| 실제 HTTP(S) Sources | 17개 |
-| API `url_citation` | 3개 |
-| Streamlit 렌더링 | 성공 |
-| 인라인 Citation | 성공 |
-| Markdown 다운로드 | 성공 |
-| UTF-8 Markdown 확인 | 성공 |
-| pytest | 19 passed |
-| compile/import | 성공 |
-| Streamlit health | HTTP 200 |
-
-Case 1에서 전체 Agent Flow가 검증되었기 때문에 추가 API 비용을 줄이기 위해 두 번째 E2E Case는 실행하지 않았습니다.
-
-모든 Report 주장과 Source 사이의 일대일 자동 검증은 현재 범위에 포함하지 않습니다.
-
----
-
-## 버전 히스토리
-
-### v0.1 - Mock Demo
-
-- Streamlit 기본 UI
-- 기술 조사 주제 입력
-- 고정 Mock Research Report
-- Report 구조 설계
-
-### v0.2 - Web Search + Structured Output
-
-- 실제 OpenAI Web Search 연결
-- Pydantic Structured Output
-- 실제 Source / Citation metadata 수집
-- Mock 기반 단위 테스트 추가
-
-### v0.3 - Bounded Research Agent Loop
-
-- Research Plan 생성
-- 검색 결과 충분성 평가
-- 조건부 Follow-up Search
-- 최대 2 Round 검색 제한
-- Source 병합 및 중복 제거
-- Harness 실행 제한 적용
-
-### v0.4 - Report Export + UX
-
-- Markdown Report 생성
-- Markdown 다운로드
-- Research Plan / Search History UI 개선
-- 진행 상태 및 오류 메시지 개선
-- 결과 세션 유지
-
-### Final E2E Validation
-
-- 실제 OpenAI API 기반 E2E 검증
-- 실제 Sources 및 Citation 검증
-- 인라인 Citation 누락 문제 발견 및 수정
-- Citation 누락 회귀 테스트 추가
-- 실제 Markdown 다운로드 검증
-- 전체 pytest 19개 통과
-
----
-
-## Git 기반 개발 흐름
-
-기능 개발은 Feature Branch와 Pull Request를 이용하여 관리했습니다.
-
-```text
-main
- ├─ feat/v0.2-web-research
- ├─ feat/v0.3-research-loop
- ├─ feat/v0.4-report-export
- └─ fix/final-e2e-validation
-```
-
-각 단계에서 다음 흐름을 사용했습니다.
-
-```text
-Feature / Fix
-→ Branch
-→ 구현
-→ 테스트
-→ Commit
-→ Push
-→ Pull Request
-→ 검토
-→ main Merge
-```
-
-최종 E2E 검증 중 발견된 문제 역시 별도의 Fix Branch와 Pull Request를 통해 수정했습니다.
-
----
-
-## 현재 구현 범위
-
-현재 버전에서 구현하지 않은 기능:
-
-- Multi-Agent
-- RAG
-- MCP
-- Reviewer Agent
-- Vector DB
-- 사용자 로그인
-- 조사 결과 DB 저장
-- 별도 Backend API
-- 서비스 배포
-- 모든 주장과 출처 간 자동 근거 대조
-
-현재 프로젝트의 목표는 복잡한 기능을 모두 구현하는 것이 아니라, 실제 개발 기술 조사 과정에서 사용할 수 있는 **작고 통제 가능한 Research Agent**를 구현하는 것입니다.
-
----
-
-## 향후 개선 방향
-
-추가 개발 시 다음 기능을 검토할 수 있습니다.
-
-- 공식 문서 우선순위 강화
-- Source 신뢰도 및 품질 평가
-- Report의 개별 주장과 Source 간 자동 근거 대조
-- 검색 결과 품질 Score
-- 조사 결과 저장 및 공유
-- 동일 주제 Research History 관리
-- 필요 시 Reviewer Agent 추가
-
-현재 핵심 기능과 실제 OpenAI API 기반 E2E 검증까지 완료된 상태입니다.
+로그인·조사 이력 DB·RAG·벡터 DB·멀티 에이전트·서비스 배포는 현재 구현 범위에 포함하지 않습니다.

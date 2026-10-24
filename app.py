@@ -1,8 +1,8 @@
 from html import escape
 
-from src.markdown_export import report_to_markdown
+from src.markdown_export import commercial_examples_markdown, report_to_markdown, result_summary_markdown
 from src.models import ResearchReport
-from src.web_research import MAX_SEARCH_ROUNDS, ResearchError, generate_research_report
+from src.web_research import MAX_SEARCH_ROUNDS, ResearchError, generate_research_report, selected_provider
 
 
 def evidence_html(report: ResearchReport) -> str:
@@ -64,8 +64,16 @@ def show_report(report: ResearchReport) -> None:
         key="download_markdown",
     )
 
+    st.subheader("조사 결과 · 구현 방식 요약")
+    st.markdown(result_summary_markdown(report))
+    st.subheader("상용 프로그램 사례와 적용 설계")
+    st.markdown(commercial_examples_markdown(report))
+
     st.header("Research Topic")
     st.write(report.topic)
+
+    if report.provider:
+        st.caption(f"Research provider: {report.provider}")
 
     if report.research_plan is not None:
         with st.expander("Research Plan", expanded=True):
@@ -81,16 +89,28 @@ def show_report(report: ResearchReport) -> None:
                 for perspective in report.research_plan.perspectives:
                     st.write(f"- {perspective}")
             st.caption(f"초기 검색 방향: {report.research_plan.search_query}")
+            if getattr(report.research_plan, "commercial_search_query", ""):
+                st.caption(f"상용 사례 검색 방향: {report.research_plan.commercial_search_query}")
 
     if report.search_queries:
         with st.expander("Search Rounds & Queries", expanded=True):
             st.write(f"검색 Round: {len(report.search_queries)} / {MAX_SEARCH_ROUNDS}")
-            st.write("추가 검색: 수행" if len(report.search_queries) > 1 else "추가 검색: 없음")
+            st.write("상용 사례 추가 조사: 수행" if len(report.search_queries) > 1 else "추가 검색: 없음")
             for index, query in enumerate(report.search_queries, start=1):
                 st.markdown(f"**{index}차 검색 Query**")
                 st.write(query)
 
     st.divider()
+
+    for title, items in (
+        ("Executive Summary", report.executive_summary),
+        ("Technical Scope & Assumptions", report.technical_scope),
+        ("Decision Criteria", report.decision_criteria),
+    ):
+        if items:
+            st.subheader(title)
+            for item in items:
+                st.write(f"- {item}")
 
     sections = (
         ("Requirements Summary", report.requirements_summary),
@@ -105,8 +125,33 @@ def show_report(report: ResearchReport) -> None:
         for item in items:
             st.write(f"- {item}")
 
+    if report.approach_details:
+        st.subheader("Technical Approach Details")
+        for approach in report.approach_details:
+            with st.expander(approach.name):
+                st.markdown("**Architecture**")
+                st.write(approach.architecture)
+                st.markdown("**Best fit**")
+                st.write(approach.best_fit)
+                st.markdown("**Strengths**")
+                for item in approach.strengths:
+                    st.write(f"- {item}")
+                st.markdown("**Trade-offs**")
+                for item in approach.tradeoffs:
+                    st.write(f"- {item}")
+
+    for title, items in (
+        ("Implementation Plan", report.implementation_plan),
+        ("Validation Plan", report.validation_plan),
+        ("Evidence Limitations", report.evidence_limitations),
+    ):
+        if items:
+            st.subheader(title)
+            for item in items:
+                st.write(f"- {item}")
+
     st.subheader("Sources")
-    st.caption("아래 URL은 OpenAI Web Search가 반환한 citation/source 메타데이터에서 가져왔습니다.")
+    st.caption("아래 URL은 검색 API가 반환한 출처 메타데이터에서 가져왔습니다.")
     for source in report.source_details:
         st.link_button(source.title, source.url)
         st.caption(f"{source.url} · {'인용됨' if source.cited else '검색 참조'}")
@@ -122,6 +167,7 @@ def main() -> None:
     dark_mode = st.toggle("다크 모드", key="dark_mode")
     apply_theme(dark_mode)
     st.title("Engineering Research Agent")
+    st.caption(f"선택된 조사 제공자: {selected_provider()}")
     st.write(
         "개발 기술 조사 주제를 입력하면 실제 Web Search와 LLM 분석으로 "
         "출처가 포함된 Research Report를 생성합니다."
@@ -141,7 +187,8 @@ def main() -> None:
                     if stage == "plan_ready":
                         st.write(f"조사 계획 생성 · 초기 검색 방향: {detail}")
                     elif stage == "search_start":
-                        status.update(label=f"{round_number}차 Web Search 진행 중...")
+                        label = "상용 프로그램 사례 조사 중..." if round_number == 2 else "기술 구현 방식 조사 중..."
+                        status.update(label=label)
                         st.write(f"{round_number}차 검색 Query: {detail}")
                     elif stage == "search_complete":
                         st.write(f"{round_number}차 검색 완료 · {detail}")
